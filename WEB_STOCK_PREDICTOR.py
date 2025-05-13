@@ -89,4 +89,4 @@ last_sequence = scaled_data[-lookback:]
 next_day_pred = model.predict(last_sequence.reshape(1, lookback, 3))
 next_day_price = scaler.inverse_transform(
     np.concatenate((next_day_pred, np.zeros((1, 2))), axis=1))[0,0]
-st.subheader(f"Next Trading Day Prediction: ${next_day_price:.2f}")import streamli
+st.subheader(f"Next Trading Day Prediction: ${next_day_price:.2f}")
