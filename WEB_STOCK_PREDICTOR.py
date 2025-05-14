@@ -8,6 +8,15 @@ from sklearn.preprocessing import MinMaxScaler
 
 st.title("Stock Price Predictor")
 
+# Fix 1: Add proper model loading with error handling
+try:
+    # Fix 2: Use raw string for Windows path
+    model_path = r"C:\Users\vishe\Downloads\Latest_stock_price_model.keras"
+    model = load_model(model_path)
+except Exception as e:
+    st.error(f"Error loading model: {str(e)}")
+    st.stop()
+
 # Input with validation
 stock = st.text_input("Enter Stock Symbol", "AAPL").upper()
 
@@ -18,7 +27,8 @@ start_date = end_date - pd.DateOffset(years=5)
 # Download data
 @st.cache_data
 def load_data(symbol):
-    return yf.download(symbol, start=start_date, end=end_date)
+    data = yf.download(symbol, start=start_date, end=end_date)
+    return data
 
 data = load_data(stock)
 if data.empty:
@@ -31,15 +41,16 @@ data['MA200'] = data['Close'].rolling(200).mean()
 data.dropna(inplace=True)
 
 # Prepare data
+# Fix 3: Only scale the Close price for simplicity
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data[['Close', 'MA50', 'MA200']])
+scaled_close = scaler.fit_transform(data[['Close']])
 
 # Create sequences
 lookback = 60
 X, y = [], []
-for i in range(lookback, len(scaled_data)):
-    X.append(scaled_data[i-lookback:i])
-    y.append(scaled_data[i, 0])  # Predict Close price
+for i in range(lookback, len(scaled_close)):
+    X.append(scaled_close[i-lookback:i])
+    y.append(scaled_close[i, 0])  # Predict Close price
 
 X, y = np.array(X), np.array(y)
 
@@ -48,26 +59,24 @@ split = int(0.8 * len(X))
 X_train, X_test = X[:split], X[split:]
 y_train, y_test = y[:split], y[split:]
 
-# Load model and predict
-model = load_model("efficient_stock_model.keras")
-predictions = model.predict(X_test)
+# Fix 4: Make predictions
+try:
+    predictions = model.predict(X_test)
+except Exception as e:
+    st.error(f"Prediction failed: {str(e)}")
+    st.stop()
 
-# Inverse transform
-predictions = scaler.inverse_transform(
-    np.concatenate((predictions.reshape(-1,1), 
-                   np.zeros((len(predictions), 2))), 
-    axis=1))[:,0]
-
-actual_prices = scaler.inverse_transform(
-    np.concatenate((y_test.reshape(-1,1), 
-                   np.zeros((len(y_test), 2))), 
-    axis=1))[:,0]
+# Inverse transform predictions
+# Fix 5: Simplified inverse transform since we only scaled Close price
+predictions = scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()
+actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
 
 # Create results DataFrame
+# Fix 6: Correct index calculation
 results = pd.DataFrame({
     'Actual': actual_prices,
     'Predicted': predictions
-}, index=data.index[lookback+split:])
+}, index=data.index[lookback+split:len(data)-len(y_test)+len(predictions)])
 
 # Visualization
 st.subheader("Price Predictions")
@@ -85,8 +94,11 @@ mae = np.mean(np.abs(results['Actual'] - results['Predicted']))
 st.write(f"Mean Absolute Error: ${mae:.2f}")
 
 # Next day prediction
-last_sequence = scaled_data[-lookback:]
-next_day_pred = model.predict(last_sequence.reshape(1, lookback, 3))
-next_day_price = scaler.inverse_transform(
-    np.concatenate((next_day_pred, np.zeros((1, 2))), axis=1))[0,0]
-st.subheader(f"Next Trading Day Prediction: ${next_day_price:.2f}")
+# Fix 7: Use proper sequence for prediction
+try:
+    last_sequence = scaled_close[-lookback:]
+    next_day_pred = model.predict(last_sequence.reshape(1, lookback, 1))
+    next_day_price = scaler.inverse_transform(next_day_pred)[0][0]
+    st.subheader(f"Next Trading Day Prediction: ${next_day_price:.2f}")
+except Exception as e:
+    st.error(f"Next day prediction failed: {str(e)}")
